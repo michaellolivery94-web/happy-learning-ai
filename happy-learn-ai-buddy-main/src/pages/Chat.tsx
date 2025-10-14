@@ -74,7 +74,9 @@ export default function Chat() {
     checkLessonCompletion();
 
     try {
-      const recentMessages = messages.slice(-10);
+      // Sliding window: send only last 12 messages to reduce token usage
+      // This prevents the conversation from becoming too long and costly
+      const recentMessages = messages.slice(-12);
 
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-tutor`,
@@ -104,6 +106,7 @@ export default function Chat() {
       const decoder = new TextDecoder();
       let assistantMessage = '';
 
+      // Add placeholder for assistant message that will be filled via streaming
       setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
 
       if (reader) {
@@ -114,6 +117,7 @@ export default function Chat() {
           const chunk = decoder.decode(value);
           const lines = chunk.split('\n');
 
+          // Process each line from the streaming response
           for (const line of lines) {
             if (line.startsWith('data: ')) {
               const data = line.slice(6);
@@ -124,6 +128,7 @@ export default function Chat() {
                 const content = parsed.choices?.[0]?.delta?.content;
                 if (content) {
                   assistantMessage += content;
+                  // Update the last message with accumulated content
                   setMessages((prev) => {
                     const newMessages = [...prev];
                     newMessages[newMessages.length - 1].content = assistantMessage;
@@ -138,6 +143,7 @@ export default function Chat() {
         }
       }
 
+      // Persist conversation to Supabase (debounced via context, but also save complete history)
       if (user && assistantMessage) {
         await supabase.from('chat_history').upsert(
           {
@@ -157,6 +163,7 @@ export default function Chat() {
         description: errorMessage,
         variant: 'destructive',
       });
+      // Remove the empty assistant message placeholder on error
       setMessages((prev) => prev.slice(0, -1));
     } finally {
       setLoading(false);
